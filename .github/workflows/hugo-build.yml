@@ -10,7 +10,7 @@ jobs:
         args: --minify --environment production
     - name: Push public site
       run: |
-        git checkout live
+        git checkout -t origin/live
         mv public /tmp/public
         rm -rf *
         mv /tmp/public/* .
