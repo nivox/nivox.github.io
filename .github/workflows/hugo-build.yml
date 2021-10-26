@@ -1,0 +1,16 @@
+name: Build Hugo Site
+on: [push]
+jobs:
+  build-hugo-site:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - uses: jakejarvis/hugo-build-action@master
+      with:
+        args: --minify --environment production
+    - name: Push public site
+      run: |
+        git config --global user.name 'Hugo Build Action'
+        git config --global user.email 'nivox@users.noreply.github.com'
+        git commit -am "Hugo Build"
+        git push
