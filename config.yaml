@@ -1,0 +1,81 @@
+baseURL: https://nivox.github.io
+languageCode: en-us
+title: Nivox's Hub
+theme: mini
+
+# Default content language, support en (English) / zh (Chinese) / nl (Dutch), default 'en'
+defaultContentLanguage: en
+
+hasCJKLanguage: true
+permalinks:
+  posts: /posts/:title/
+
+googleAnalytics: G-0L37NV413T
+#disqusShortname: your-disqus-shortname
+
+# Hugo Configure Markup
+# More info: https://gohugo.io/getting-started/configuration-markup#
+markup:
+  highlight:
+    guessSyntax: true
+    style: emacs
+  tableOfContents:
+    endLevel: 3
+    ordered: false
+    startLevel: 2
+
+# Social links in footer, support github,twitter,stackoverflow,facebook
+social:
+  # e.g.
+  github: https://github.com/nivox
+  twitter: https://twitter.com/nivox
+  stackoverflow: https://stackoverflow.com/users/440875/nivox
+  #linkedin: https://linkedin.com/in/andreazito
+
+
+# Site parameters
+params:
+  # Site Author
+  author: Andrea Zito
+  # Author biography
+  bio: Ramblings about software engineering... mostly
+  # Site Description, used in HTML meat
+  description: Ramblings about software engineering... mostly
+
+
+  ###########################################
+  # Optional Configuration
+  ###########################################
+
+  # To enable RSS, you could set `enableRSS: true`, default is `true`
+  enableRSS: true
+  # To enable comments, you may need to set `disqusShortname`
+  enableComments: false
+  # To enable comments, you may need to set `googleAnalytics`
+  enableGoogleAnalytics: true
+  # To enable table of content, you could set `showToc: true`, default is `false`
+  showToc: true
+  # To hidden powerBy message in the page footer, you could set: `showPowerBy: false`, default is `true`
+  showPowerBy: false
+  # To enable math typesetting , you could set `math: true`, default is `false`
+  math: false
+  # To hidden post summary in home page, you could set `hiddenPostSummaryInHomePage: true`, default is `false`
+  hiddenPostSummaryInHomePage: false
+  # Website copy write, default: '© Copyright 2021 ❤️ {params.author}'
+  copyright: '© Copyright 2021 - Andrea Zito' 
+
+  # Extra links in navigation
+  links:
+    ## e.g.
+    # - name: Project
+    #   path: /project
+
+  # You can put your custom css and js to `static` directory, or use remote css and js files which start with `http://` or `https://`
+  customCSS:
+    ## e.g.
+    # - css/custom.css # local css in `static/css/custom.css`
+    # - https://example.com/custom.css # remote css
+  customJS:
+    ## e.g.
+    # - js/custom.js # local js in `static/js/custom.js`
+    # - https://example.com/custom.js # remote js

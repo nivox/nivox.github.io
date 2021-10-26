@@ -2,6 +2,7 @@
 title: "Demystifying Akka Streams' Materialized Values"
 date: 2021-10-26T19:07:21Z
 draft: true
+tags: ["akka", "stream"]
 ---
 
 One aspect of Akka Streams newcomers often have difficulty to grok is the one of *materialized values*. This concept comes up even in the simplest of example and is often glossed over without a satisfactory explaination. This creates an aura of mystery which mislead people into deeming it far more complex than what it actually is.
