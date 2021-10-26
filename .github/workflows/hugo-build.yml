@@ -7,14 +7,13 @@ jobs:
     - uses: actions/checkout@master
     - uses: jakejarvis/hugo-build-action@master
       with:
-        args: --minify --environment production
+        args: --minify --environment production -d ${{runner.temp}}/public
     - name: Push public site
       run: |
         git fetch
         git checkout live
-        cp -a public ${{runner.temp}}/public
         rm -rf *
-        cp -a /tmp/public/* .
+        cp -r ${{runner.temp}}/public/* .
         git config --global user.name 'Hugo Build Action'
         git config --global user.email 'nivox@users.noreply.github.com'
         git add .
