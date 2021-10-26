@@ -12,7 +12,7 @@ jobs:
       run: |
         git fetch
         git checkout live
-        mv public /tmp/public
+        mv public ${{runner.temp}}/public
         rm -rf *
         mv /tmp/public/* .
         git config --global user.name 'Hugo Build Action'
