@@ -20,23 +20,50 @@ The short answer to this question is that *materialized values* gives us a commi
 
 In case of an *hello world* example this channel is used to inform us of the completion of the stream.
 
-%[https://gist.github.com/nivox/db1d6bb89df7938eb4a9ae320d49f262]
+```scala
+val done: Future[Done] = Source.repeat("Hello world")
+    .take(3)
+    .runWith(Sink.foreach(println))
+```
 
 The same pattern applies when we want to access the value *computed* by a stream.
 
-%[https://gist.github.com/nivox/c3a05772dcbd71444589a357aa3f86ca]
+```scala
+val result: Future[Int] = Source(1 to 10)
+    .runWith(Sink.fold(0)(_ + _))
+```
 
 This however is only one (even if prevalent) use of these communication channels.
 
 Another, slighly more complicated, use of *materialization value* could arise when we have an unbounded source (for example producing messages read from a Kafka topic) and we want to perform a graceful shutdown. This requires sending a command to the source instructing it to stop polling for new data and complete.
 
-%[https://gist.github.com/nivox/22a726d1aa0b471e1185846e9db6c691]
+```scala
+val stream: RunnableGraph[Control, Future[Done]] = Consumer
+    .plainSource(consumerSettings, Subscriptions.topic("my-topic")
+    .toMat(Sink.foreach(println))(Keep.both)
+
+val (control, done) = stream.run()
+
+// … when we want to shutdown
+control.shutdown()
+```
 
 Ok, so we need a way for the stream to communicate with the outside world, but is it really necessary to introduce this complexity? Couldn't we achieve the same result by simply using closures to provide the stream feedback channel and the control interface?
 
 Let's try to implement this strategy for the feedback channel.
 
-%[https://gist.github.com/nivox/b4dff9b05ad228239400f847f700eccb]
+```scala
+val promise = Promise[Done]()
+val stream: RunnableGraph[NotUsed] = Source.repeat("Hello world")
+    .take(3)
+    .to { 
+        Sink.foreach(println).mapMaterializedValue { done =>
+            done.onComplete {
+                case Success(_) => promise.success(Done)
+                case Failure(ex) => promise.fail(ex)
+            }
+        }
+```
 
 Everything seem to work as expected! We achieved the same outcome without relying on the value generated as a result of running the stream.
 
@@ -51,7 +78,7 @@ Now that we understand why *materialized values* are needed let's try and shed s
 
 First of all it is important to note that *materialized values* are not some special properties of sinks and sources. Indeed every stage in Akka Streams **needs** to produce a value during the materialization phase (i.e. when the stream is executed). In case a stage doesn't have anything meaningful to to produce it is convention to use the singleton type `NotUsed`.
 
-When we want to connect 2 independently defined stages we incur in a problem: the result of this composition will be itself a stage that need to declare the type it will produce during the materialization. But given that we are just connecting 2 already define stages, which of the 2 *materialized values* should we?
+When we want to connect 2 independently defined stages we incur in a problem: the result of this composition will be itself a stage that need to declare the type it will produce during the materialization. But given that we are just connecting 2 already define stages, which of the 2 *materialized values* should we adopt?
 
 We might think that a sensible solution is to just collect all of them into a list and let the user decide how to handle it. This approach however has a pretty evident disadvantage: given that each stage can materialize a value of any type, the resulting list would need to be a `List[Any]`. We might be tempted to try and exploit tuples to regain our types (by adding a lot of specialized operators for all the possible arities of the stages, or by rely on a library like Shapeless) however we soon realize that this would become unmanageable as the number of stages in our pipeline increases.
 
@@ -65,7 +92,11 @@ To this end *Akka Streams* offers us 2 operators `viaMat` and `toMat` which requ
 To further improve developer convenience and code readability *Akka Streams* provides a variation of the above operators which automatically apply the `Keep.left` combination function: `via` and `to`.
 
 ## A concrete example
-In order to fix into our mind all the things we've said so far let's try and play with a simple example:
+In order to fix into our mind all the things we've said so far let's try and play with a simple example.
+
+We want to build a simple stream which given a source of integers, computes their square, increments the result by one and finally prints them to video. The catch is that we want to be able to control when the source should stop emitting new element from outside the stream. To do this we have our source materialize a `ControlInterface`. In order to properly wait for all elements to be processed before terminating the program, we need also need to have our sink materialize a `Future[Done]`.
+
+Now that we understand how *materialized values* composes we can use the operators we discussed in the previous section to get a tuple containing both the `ControlInterface` and the `Future[Done]`
 
 ```scala
 trait ControlInterface {
@@ -97,15 +128,38 @@ doneF.onComplete { result =>
 }
 ```
 
-We want to build a simple stream which given a source of integers, computes their square, increments the result by one and finally prints them to video. The catch is that we want to be able to control when the source should stop emitting new element from outside the stream. To do this we have our source materialize a `ControlInterface`. In a more realistic application this interface might exposed via an http endpoint, but in this example we limit ourself to simply call it after a fixed delay. In order to properly wait for all elements to have been processed before terminating the program, we need to also need to have access to the `Future[Done]` produced by our sink.
-
-Now that we understand how *materialized values* composes we can use the operators we discussed in the previous section to get a tuple containing all the things we are interested in.
-
 The following diagram illustrates how the various combination function are chained in order to obtain our end result.
 ![Materialized Values composition diagram](/images/post/akka-stream-materialized-values/combination.png)
 
 ## How can we return our own values?
 
+At this point we feel comfortable working with *materialized values* and we are able to use the various combinator functions to guide the materialization into producing exactly the data whe are interested in.
 
+However there is still something that bother us: what if we wanted to have a stage produce a *materialzed value* of our choosing? The last example featured a source returning a type we defined: `ControlInterface`. This cannot be something that a built-in stage can have generated.
+
+Indded Akka Streams still has some tricks up its sleeve to work on *materialized values*. Up until this point we've only really handled them via the composition functions we specify when combining 2 stages. As we have seen these functions takes 2 values and return a new value as a result. In all the examples we've seen this result was only a projection, however we could have opted to return an entirely different type. In the last example instead of returning a tuple of the `ControlInterface` and the `Future[Done]` we could have opted to create a case class `MyMaterializedValue` containing them.
+
+This intuition should makes us wonder if something similar is possible also when operating on a single stage. That is indeed the case: we can use the method `mapMaterializeValue` to apply a transformation to the *materialized value* of a source, flow or sink. This method take as an argument a function that given the current value needs to produce a new value.
+
+Let's see how we can use this feature to implement the source from the last example:
+
+```scala
+class ControlInterfaceImpl(killSwitch: KillSwitch) extends ControlInterface {
+  def stop: Unit = killSwitch.shutdown()
+}
+
+val source: Source[Int, ControlInterface] = Source.fromIterator(() => Iterator.from(1))
+  .throttle(1, 500.millis)
+  .viaMat(KillSwitches.single)(Keep.right)
+  .mapMaterializedValue(s => new ControlInterfaceImpl(s))
+```
+
+The idea is to leverage a kill switch stage to interrupt the generation of new integers and wrap the materialized `KillSwitch` instance into an implementation of our `ControlInterface`.
+
+This strategy of handling *materialized values* is a good approach when we want to *repackage* the current value into something else. This help in avoiding leaking too many details of how our stages are implemented leaving room to tweak the internal representation without breaking source compatibility.
+
+An important observation we can make on this scheme is that inside the `mapMaterializedValue` we are free to close over whathever value without any chance for Akka Streams to tell us if we are doing something potentially dangerous. As we already discussed in previous sections, stages once defined can be materialized multiple times. Thus we must be extra careful not to close over values which are not intended to be used multiple times (remember the example on promises).
+
+This strategy covers the majority of situation where we need to operate on *materialized values*, so we could stop here. However in the preface I stated that this article would be an in-depth coverage of the topic, so let's go on. In the remainder of this section we will see how to use materialization values inside a `GraphStage`. This is the lowest level API with which we can build a stage.
 
 
