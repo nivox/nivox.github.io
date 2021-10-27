@@ -3,7 +3,7 @@ languageCode: en-us
 title: Nivox's Hub
 theme: mini
 
-resourceDir: /tmp/hugo-resources
+resourceDir: .hugo-resources
 
 # Default content language, support en (English) / zh (Chinese) / nl (Dutch), default 'en'
 defaultContentLanguage: en
