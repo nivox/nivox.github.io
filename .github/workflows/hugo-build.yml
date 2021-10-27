@@ -19,5 +19,5 @@ jobs:
         git config --global user.name 'Hugo Build Action'
         git config --global user.email 'nivox@users.noreply.github.com'
         git add .
-        git commit -m "Hugo Build"
+        git commit --allow-empty -m "Hugo Build"
         git push
