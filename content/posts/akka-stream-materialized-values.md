@@ -223,3 +223,21 @@ val source: Source[Int, ControlInterface] = Source.fromGraph(new StoppableIntSou
 At this point we should have a good understanding of *materialized values* and how to handle them. We might think that the functinality we have covered are enough to implement whatever program we might think of. However Akka Streams still has an ace up its sleve which comes into our help when we face particularly tricky situation.
 
 ## Let's talk pre-materialization
+Let's suppose we need to perform some streaming computations on integers, similarly to how we've done in the previous examples, however much more complex. Luckily we found a library that seems to do exactly what we need and exposes an exposes a simple API we can use!
+
+```scala=
+trait AmazingLibrary {
+  def complexComputation(source: Source[Int, _]): Future[Int]
+}
+```
+
+We can just plug our source in, grab the result and be done early with our day. Right?
+
+Thinking about the beer that await us as soon as we finish this last task, we start piecing things togheter until we realize that the library is handling the materialization of the stream by itself.
+This means that we will not be able to obtain a reference to our `ControlInterface`, which means that the stream will never terminate which in turn will result in the future returned by the library to never complete. We can see our pint of beer vanishing before our eyes.
+
+However Akka Streams comes into our rescue with a last feature: prematerialization.
+
+The problem we are facing is that we've lost control of the materialization of the stream, however if we were able to materialize just our source and grab its *materialized value* we would be fine. Prematerialization allows us to do just that.
+
+When a stage is prematerialized Akka instantiates it and gives us its *materialized value* while at the same time creating a linked stage which we can then pass around. This linked stage can then be materialized as many time as we want, just like normal stages, however it remain linked to the original stage we prematerialize. This means that if for any reason the prematerialized stages completes, all future materialization of the linked stage will result in a stream which immediately completes.
