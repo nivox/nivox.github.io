@@ -240,4 +240,30 @@ However Akka Streams comes into our rescue with a last feature: prematerializati
 
 The problem we are facing is that we've lost control of the materialization of the stream, however if we were able to materialize just our source and grab its *materialized value* we would be fine. Prematerialization allows us to do just that.
 
-When a stage is prematerialized Akka instantiates it and gives us its *materialized value* while at the same time creating a linked stage which we can then pass around. This linked stage can then be materialized as many time as we want, just like normal stages, however it remain linked to the original stage we prematerialize. This means that if for any reason the prematerialized stages completes, all future materialization of the linked stage will result in a stream which immediately completes.
+When a stage is prematerialized Akka instantiates it and gives us its *materialized value* while at the same time creating a linked stage which we can then pass around. This linked stage can then be materialized as many time as we want just like normal stages, however it remain linked to the original stage we have prematerialize. This means that, if for any reason, the prematerialized stages completes, all future materialization of the linked stage will result in a stream which immediately completes.
+
+Let's see how we can use the prematerialization feature to use our source with this amazing library.
+
+```scala
+val source: Source[Int, ControlInterface] = Source.fromGraph(new StoppableIntSource(1))
+  .throttle(1, 500.millis)
+
+val (control: ControlInterface, linkedSource: Source[Int, NotUsed]) = 
+  source.preMaterialize()
+
+val amazingLibrary: AmazingLibrary = ???
+val resutlF: Future[Int] = amazingLibrary.complexComputation(linkedSource)
+```
+
+Akka Streams provides a `preMaterialize` operator for both `Source` and `Sink` however, at least as of version 2.6.17, it doesn't feature one for `Flow`. It is indeed much rarer to be in a situation where this functionality is needed for flows, however it does happen. There is an Akka [issue](https://github.com/akka/akka/issues/30074) proposing its addition with a snippet implementation that you can use in your project right now while waiting for Akka to include the functionality natively.
+
+## Conclusion
+In this article we've introduced *materialized values*, explain the reason why they exist and seen various examples showing how to use them. The aim was to provide an holistic coverage of the topic in order to give the reader a better *feel* for the subject.
+
+There's no subtitute for playing with the library and trying to understand how the various concepts interact with each other in order to build a deep understanding, but hopefully this piece can serve as a guideline to better focus your exploration.
+
+## Resources
+
+- [Akka Streams documetation: basics and working with flows](https://doc.akka.io/docs/akka/current/stream/stream-flows-and-basics.html)
+- [Akka Streams dcumentation: materialized values](https://doc.akka.io/docs/akka/current/stream/stream-composition.html#materialized-values)
+- [Akka Streams documentation: working with graphs](https://doc.akka.io/docs/akka/current/stream/stream-graphs.html)
