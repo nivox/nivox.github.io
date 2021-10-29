@@ -100,7 +100,7 @@ Now that we understand how *materialized values* composes we can use the operato
 
 ```scala
 trait ControlInterface {
-  def stop: Unit
+  def stop(): Unit
 }
 
 val source: Source[Int, ControlInterface] = ???
@@ -116,7 +116,7 @@ val (control, doneF): (ControlInterface, Future[Done]) = source
 
 system.scheduler.scheduleOnce(2.seconds) { 
   println("Stopping the source")
-  control.stop 
+  control.stop() 
 }
 
 doneF.onComplete { result =>
@@ -145,7 +145,7 @@ Let's see how we can use this feature to implement the source from the last exam
 
 ```scala
 class ControlInterfaceImpl(killSwitch: KillSwitch) extends ControlInterface {
-  def stop: Unit = killSwitch.shutdown()
+  def stop(): Unit = killSwitch.shutdown()
 }
 
 val source: Source[Int, ControlInterface] = Source.fromIterator(() => Iterator.from(1))
@@ -160,6 +160,66 @@ This strategy of handling *materialized values* is a good approach when we want 
 
 An important observation we can make on this scheme is that inside the `mapMaterializedValue` we are free to close over whathever value without any chance for Akka Streams to tell us if we are doing something potentially dangerous. As we already discussed in previous sections, stages once defined can be materialized multiple times. Thus we must be extra careful not to close over values which are not intended to be used multiple times (remember the example on promises).
 
-This strategy covers the majority of situation where we need to operate on *materialized values*, so we could stop here. However in the preface I stated that this article would be an in-depth coverage of the topic, so let's go on. In the remainder of this section we will see how to use materialization values inside a `GraphStage`. This is the lowest level API with which we can build a stage.
+This strategy covers the majority of situation where we need to operate on *materialized values*, so we could stop here. However in the preface I stated that this article would be an in-depth coverage of the topic, so let's go on. In the remainder of this section we will see how to create a custom stage which materialiazes a value of our choosing.
 
+So let's image that for some reason we find ourself unable or unwilling to use kill switches as a mechanism to implement the `ControlInterface`. We need an alternative way to communicate with our source to signal we want it to stop producing new values.
 
+To achieve this we will use the `GraphStage` API: this is the lowest level building block of Akka Streams on top of which all other components are constructed. Explaining this API alone could be the topic of a full article, so we are not going to dwell on the details of how it works. Instead we will limit ourself to discussing the parts which are functional to working with *materialized values*.
+
+Given that our main objective is to produce a *materialized value* we will use a variant of the API called `GraphStageWithMaterializedValue` which allows to define a factory which creates both the logic and the value of our stage.
+
+The idea behind our implementation will be rather simple: we'll define a stage of shape `Source` which will produce integers starting from a specified numebr and provide a callback function which we will use to complete the stage when invoked.
+
+```scala
+class AsyncCallbackControlInterface(callback: AsyncCallback[Unit]) extends ControlInterface {
+  def stop(): Unit = {
+    callback.invoke( () )
+  }
+}
+
+class StoppableIntSource(from: Int) 
+  extends GraphStageWithMaterializedValue[SourceShape[Int], ControlInterface] {
+  val out: Outlet[Int] = Outlet("out")
+  
+  def shape: SourceShape[Int] = SourceShape(out)
+  
+  class StoppableIntSourceLogic(_shape: Shape) extends GraphStageLogic(shape) {
+      private[StoppableIntSource] val stopCallback: AsyncCallback[Unit] = 
+        getAsyncCallback[Unit](
+          (_) =>
+            completeStage()
+        )
+      
+      private var next: Int = from
+      
+      setHandler(out, new OutHandler {
+        def onPull(): Unit = {
+          push(out, next)
+          next += 1
+        }
+      })
+  }
+  
+  def createLogicAndMaterializedValue(inheritedAttributes: Attributes)
+  : (GraphStageLogic, ControlInterface) = {
+    val logic = new StoppableIntSourceLogic(shape)
+    
+    val controlInterface = new AsyncCallbackControlInterface(logic.stopCallback)
+    logic -> controlInterface
+  }
+}
+```
+
+Most of the code is rather simple if a little verbose. The only important bit is the one regarding the handling of the `stopCallback`. For starters we can see that we defined a dedicated class for the stage logic instead of defining it anonymously as it usually done when working with `GraphStage`. This is so that can have access to the callback from the outside of the class. Indeed looking at the `createLogicAndMaterializedValue` method we can see that first we create the logic and then we extract the callback and wrap it inside our `ControlInterface` implementation. 
+
+The other thing to note is that inside the `AsyncCallbackControlInterface` we are not calling the callback directly but instead we are using the `invoke` method. This will schedule the execution of our callback code asynchronously by interleaving it with the data handlers. This strategy guarantees us that once the code is run no other thread has access to the `GraphStageLogic` instance so we are safe to operate on its mutable state or perform management operations on it.
+
+We can now use our `StoppableIntSource` to implement the source:
+```scala
+val source: Source[Int, ControlInterface] = Source.fromGraph(new StoppableIntSource(1))
+  .throttle(1, 500.millis)
+```
+
+At this point we should have a good understanding of *materialized values* and how to handle them. We might think that the functinality we have covered are enough to implement whatever program we might think of. However Akka Streams still has an ace up its sleve which comes into our help when we face particularly tricky situation.
+
+## Let's talk pre-materialization
