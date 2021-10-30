@@ -6,7 +6,7 @@ slug: akka-streams-materialized-values
 keywords: ["akka", "akka-streams", "materialization", "materialized value"]
 tags: ["akka", "akka-streams"]
 date: 2021-10-30T22:00:00Z
-draft: true
+draft: false
 ---
 
 One aspect of *Akka Streams* newcomers often have difficulty to grok is the one of *materialized values*. This concept comes up even in the simplest of examples and is often glossed over without a satisfactory explanation. This creates an aura of mystery which mislead people into deeming it far more complex than what it actually is.
