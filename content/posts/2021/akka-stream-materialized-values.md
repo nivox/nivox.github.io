@@ -4,6 +4,7 @@ description: "Let's explore Akka Streams materialized values and try to understa
 summary: "Let's explore Akka Streams materialized values and try to understard what they are, why they are needed, and how to use them."
 keywords: ["akka", "akka-streams", "materialization", "materialized value"]
 tags: ["akka", "akka-streams"]
+slug: "akka-stream-materialized-values"
 date: 2021-10-30T20:00:00Z
 draft: false
 ---
