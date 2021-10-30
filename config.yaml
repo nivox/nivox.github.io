@@ -10,7 +10,7 @@ defaultContentLanguage: en
 
 hasCJKLanguage: true
 permalinks:
-  posts: /posts/:title/
+  posts: /posts/:slug/
 
 googleAnalytics: G-0L37NV413T
 disqusShortname: nivox-github-io
