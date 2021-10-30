@@ -3,6 +3,8 @@ on: [push]
 jobs:
   build-hugo-site:
     runs-on: ubuntu-latest
+    env:
+      HUGO_ENV: production
     steps:
     - uses: actions/checkout@master
       with:
