@@ -1,0 +1,284 @@
+<!doctype html><html lang=en-us>
+<head>
+<title>Demystifying Akka Streams' Materialized Values | Nivox's Hub</title>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge,chrome=1">
+<meta name=viewport content="width=device-width,minimum-scale=1">
+<meta name=description content="Let's explore Akka Streams materialized values and try to understard what they are, why they are needed, and how to use them.">
+<meta name=generator content="Hugo 0.88.1">
+<meta name=ROBOTS content="NOINDEX, NOFOLLOW">
+<link rel=stylesheet href=/css/style.css>
+<link rel="shortcut icon" href=/images/favicon.ico type=image/x-icon>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-0L37NV413T"></script>
+<script>var doNotTrack=!1;if(!doNotTrack){window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date),gtag('config','G-0L37NV413T',{anonymize_ip:!1})}</script>
+</head>
+<body>
+<nav class=navigation>
+<a href=/> <span class=arrow>←</span>Home</a>
+<a href=/posts>Archive</a>
+<a href=/tags>Tags</a>
+<a href=/about>About</a>
+<a class=button href=https://nivox.github.io/index.xml>Subscribe</a>
+</nav>
+<main class=main>
+<section id=single>
+<h1 class=title>Demystifying Akka Streams' Materialized Values</h1>
+<div class=tip>
+<time datetime="2021-10-30 20:00:00 +0000 UTC">Oct 30, 2021</time>
+<span class=split>
+·
+</span>
+<span>
+2791 words
+</span>
+<span class=split>
+·
+</span>
+<span>
+14 minute read
+</span>
+</div>
+<aside class=toc>
+<details>
+<summary>Table of Contents
+</summary>
+<div>
+<nav id=TableOfContents>
+<ul>
+<li><a href=#why-are-they-needed>Why are they needed?</a></li>
+<li><a href=#how-do-they-compose>How do they compose?</a></li>
+<li><a href=#a-concrete-example>A concrete example</a></li>
+<li><a href=#how-can-we-return-our-own-values>How can we return our own values?</a></li>
+<li><a href=#lets-talk-pre-materialization>Let&rsquo;s talk pre-materialization</a></li>
+<li><a href=#conclusion>Conclusion</a></li>
+<li><a href=#resources>Resources</a></li>
+</ul>
+</nav>
+</div>
+</details>
+</aside>
+<div class=content>
+<p>One aspect of <em>Akka Streams</em> newcomers often have difficulty to grok is the one of <em>materialized values</em>. This concept comes up even in the simplest of examples and is often glossed over without a satisfactory explanation. This creates an aura of mystery which mislead people into deeming it far more complex than what it actually is.</p>
+<p>I’ve witnessed developers being on their toes regarding <em>materialized values</em> even after becoming comfortable with some of <em>Akka Streams</em>’ undeniably more complex features.</p>
+<p>In this article I’m gonna try to give an in-depth coverage of all there is to know about <em>materialized values</em> using as a guide the questions and doubts I had while learning the library:</p>
+<ul>
+<li>why are they needed?</li>
+<li>how do they compose?</li>
+<li>how can we return our own values?</li>
+</ul>
+<h2 id=why-are-they-needed>Why are they needed? <a href=#why-are-they-needed class=anchor>🔗</a></h2><p>The short answer to this question is that <em>materialized values</em> give us a communication channel with the various stages of our stream.</p>
+<p>In the case of a <em>hello world</em> example, this channel is used to inform us of the completion of the stream.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>val</span> done<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Done</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Source</span><span style=color:#666>.</span>repeat<span style=color:#666>(</span><span style=color:#b44>&#34;Hello world&#34;</span><span style=color:#666>)</span>
+    <span style=color:#666>.</span>take<span style=color:#666>(</span><span style=color:#666>3</span><span style=color:#666>)</span>
+    <span style=color:#666>.</span>runWith<span style=color:#666>(</span><span style=color:#00f>Sink</span><span style=color:#666>.</span>foreach<span style=color:#666>(</span>println<span style=color:#666>))</span>
+</code></pre></div><p>The same pattern applies when we want to access the value <em>computed</em> by a stream.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>val</span> result<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Source</span><span style=color:#666>(</span><span style=color:#666>1</span> to <span style=color:#666>10</span><span style=color:#666>)</span>
+    <span style=color:#666>.</span>runWith<span style=color:#666>(</span><span style=color:#00f>Sink</span><span style=color:#666>.</span>fold<span style=color:#666>(</span><span style=color:#666>0</span><span style=color:#666>)(</span><span style=color:#a2f;font-weight:700>_</span> <span style=color:#666>+</span> <span style=color:#a2f;font-weight:700>_</span><span style=color:#666>))</span>
+</code></pre></div><p>This however is only one (even if prevalent) use of these communication channels.</p>
+<p>Another, slightly more complicated, use of <em>materialization value</em> could arise when we have an unbounded source (for example producing messages read from a Kafka topic) and we want to perform a graceful shutdown. This requires sending a command to the source instructing it to stop polling for new data and complete it.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>val</span> stream<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>RunnableGraph</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Control</span>, <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Done</span><span style=color:#666>]]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Consumer</span>
+    <span style=color:#666>.</span>plainSource<span style=color:#666>(</span>consumerSettings<span style=color:#666>,</span> <span style=color:#00f>Subscriptions</span><span style=color:#666>.</span>topic<span style=color:#666>(</span><span style=color:#b44>&#34;my-topic&#34;</span><span style=color:#666>)</span>
+    <span style=color:#666>.</span>toMat<span style=color:#666>(</span><span style=color:#00f>Sink</span><span style=color:#666>.</span>foreach<span style=color:#666>(</span>println<span style=color:#666>))(</span><span style=color:#00f>Keep</span><span style=color:#666>.</span>both<span style=color:#666>)</span>
+
+<span style=color:#a2f;font-weight:700>val</span> <span style=color:#666>(</span>control<span style=color:#666>,</span> done<span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=</span> stream<span style=color:#666>.</span>run<span style=color:#666>()</span>
+
+<span style=color:#080;font-style:italic>// … when we want to shutdown
+</span><span style=color:#080;font-style:italic></span>control<span style=color:#666>.</span>shutdown<span style=color:#666>()</span>
+</code></pre></div><p>Ok, so we need a way for the stream to communicate with the outside world, but is it really necessary to introduce this complexity? Couldn&rsquo;t we achieve the same result by simply using closures to provide the stream feedback channel and the control interface?</p>
+<p>Let&rsquo;s try to implement this strategy for the feedback channel.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>val</span> promise <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Promise</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Done</span><span style=color:#666>]()</span>
+<span style=color:#a2f;font-weight:700>val</span> stream<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>RunnableGraph</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>NotUsed</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Source</span><span style=color:#666>.</span>repeat<span style=color:#666>(</span><span style=color:#b44>&#34;Hello world&#34;</span><span style=color:#666>)</span>
+    <span style=color:#666>.</span>take<span style=color:#666>(</span><span style=color:#666>3</span><span style=color:#666>)</span>
+    <span style=color:#666>.</span>to <span style=color:#666>{</span> 
+        <span style=color:#00f>Sink</span><span style=color:#666>.</span>foreach<span style=color:#666>(</span>println<span style=color:#666>).</span>mapMaterializedValue <span style=color:#666>{</span> done <span style=color:#a2f;font-weight:700>=&gt;</span>
+            done<span style=color:#666>.</span>onComplete <span style=color:#666>{</span>
+                <span style=color:#a2f;font-weight:700>case</span> <span style=color:#00f>Success</span><span style=color:#666>(</span><span style=color:#a2f;font-weight:700>_</span><span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=&gt;</span> promise<span style=color:#666>.</span>success<span style=color:#666>(</span><span style=color:#00f>Done</span><span style=color:#666>)</span>
+                <span style=color:#a2f;font-weight:700>case</span> <span style=color:#00f>Failure</span><span style=color:#666>(</span>ex<span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=&gt;</span> promise<span style=color:#666>.</span>fail<span style=color:#666>(</span>ex<span style=color:#666>)</span>
+            <span style=color:#666>}</span>
+        <span style=color:#666>}</span>
+
+<span style=color:#a2f;font-weight:700>val</span> streamDone<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Done</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> promise<span style=color:#666>.</span>future
+</code></pre></div><p>Everything seems to work as expected! We achieved the same outcome without relying on the value generated as a result of running the stream.</p>
+<p>However what would happen if we were to wait for the <code>streamDone</code> future to complete and then run the stream a second time?</p>
+<p>Well in this case we would have a failure trying to complete the promise: once a promise has been completed it cannot change its value, thus every attempt at doing so by calling <code>success</code> or <code>fail</code> on it raises an exception. Even worse, if we were to try and use the promise to get another future to wait for the second run termination, we would get back an already completed future with the result of the first run, effectively making it impossible to receive any signal from the second run.</p>
+<p>This experiment allows us to conclude that <em>materialized values</em> are necessary to enable stream stages to be reused multiple times. By having stages create their communication channel only when the stream is run <em>Akka Streams</em> ensures that different stream instantiations are independent.</p>
+<h2 id=how-do-they-compose>How do they compose? <a href=#how-do-they-compose class=anchor>🔗</a></h2><p>Now that we understand <strong>why</strong> <em>materialized values</em> are needed let&rsquo;s try and shed some light on how they work.</p>
+<p>First of all, it is important to note that <em>materialized values</em> are not some special properties of sinks and sources. Indeed every stage in <em>Akka Streams</em> <strong>needs</strong> to produce a value during the materialization phase (i.e. when the stream is executed). In case a stage doesn&rsquo;t have anything meaningful to produce it is the convention to use the singleton type <code>NotUsed</code>.</p>
+<p>When we want to connect 2 independently defined stages we incur a problem: the result of this composition will be itself a stage that needs to declare the type it will produce during the materialization. But given that we are just connecting 2 already define stages, which of the 2 <em>materialized values</em> should we adopt?</p>
+<p>We might think that a sensible solution is to just collect all of them into a list and let the user decide how to handle it. This approach however has a pretty evident disadvantage: given that each stage can materialize a value of any type, the resulting list would need to be a <code>List[Any]</code>. We might be tempted to try and exploit tuples to regain our types (by adding a lot of specialized operators for all the possible arities of the stages, or by relying on a library like Shapeless) however we soon realize that this would become unmanageable as the number of stages in our pipeline increases.</p>
+<p>So we reach the conclusion that the better strategy is to deal with <em>materialized values</em> while combining stages. This indeed is the same conclusion Akka&rsquo;s authors have come up with.</p>
+<p>To this end <em>Akka Streams</em> offers us 2 operators <code>viaMat</code> and <code>toMat</code> which require us to provide a combination function used to produce the <em>materialization value</em> of the composition of the stages. Most of the time what we are interested in is just to select one of the two stages' values or possibly to grab them both. This is so common that the library provides an implementation of these strategies:</p>
+<ul>
+<li><code>Keep.left</code>: select the <em>materialization value</em> of the left (upstream) stage</li>
+<li><code>Keep.right</code>: select the <em>materialization value</em> of the right (downstream) stage</li>
+<li><code>Keep.both</code>: collet both <em>materialization values</em> into a tuple</li>
+</ul>
+<p>To further improve developer convenience and code readability <em>Akka Streams</em> provides a variation of the above operators which automatically apply the <code>Keep.left</code> combination function: <code>via</code> and <code>to</code>.</p>
+<h2 id=a-concrete-example>A concrete example <a href=#a-concrete-example class=anchor>🔗</a></h2><p>In order to fix into our mind all the things we&rsquo;ve said so far let&rsquo;s try and play with a simple example.</p>
+<p>We want to build a simple stream that given a source of integers, computes their square, increments the result by one, and finally prints them to video. The catch is that we want to be able to control when the source should stop emitting new elements from outside the stream. To do this we have our source materialize a <code>ControlInterface</code>. To properly wait for all elements to be processed before terminating the program, we need also need to have our sink materialize a <code>Future[Done]</code>.</p>
+<p>Now that we understand how <em>materialized values</em> composes we can use the operators we discussed in the previous section to get a tuple containing both the <code>ControlInterface</code> and the <code>Future[Done]</code>.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>trait</span> <span style=color:#00f>ControlInterface</span> <span style=color:#666>{</span>
+  <span style=color:#a2f;font-weight:700>def</span> stop<span style=color:#666>()</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Unit</span>
+<span style=color:#666>}</span>
+
+<span style=color:#a2f;font-weight:700>val</span> source<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Source</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#666>???</span>
+<span style=color:#a2f;font-weight:700>val</span> flow1<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Flow</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>NotUsed</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Flow</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>].</span>map<span style=color:#666>(</span>x <span style=color:#a2f;font-weight:700>=&gt;</span> x <span style=color:#666>*</span> x<span style=color:#666>)</span>
+<span style=color:#a2f;font-weight:700>val</span> flow2<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Flow</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>NotUsed</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Flow</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>].</span>map<span style=color:#666>(</span>x <span style=color:#a2f;font-weight:700>=&gt;</span> x <span style=color:#666>+</span> <span style=color:#666>1</span><span style=color:#666>)</span>
+<span style=color:#a2f;font-weight:700>val</span> sink<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Sink</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Done</span><span style=color:#666>]]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Sink</span><span style=color:#666>.</span>foreach<span style=color:#666>(</span>println<span style=color:#666>)</span>
+
+<span style=color:#a2f;font-weight:700>val</span> <span style=color:#666>(</span>control<span style=color:#666>,</span> doneF<span style=color:#666>)</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#666>(</span><span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>,</span> <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Done</span><span style=color:#666>])</span> <span style=color:#a2f;font-weight:700>=</span> source
+  <span style=color:#666>.</span>viaMat<span style=color:#666>(</span>flow1<span style=color:#666>)(</span><span style=color:#00f>Keep</span><span style=color:#666>.</span>left<span style=color:#666>)</span> <span style=color:#080;font-style:italic>// explicitly specifying Keep.left
+</span><span style=color:#080;font-style:italic></span>  <span style=color:#666>.</span>via<span style=color:#666>(</span>flow2<span style=color:#666>)</span>               <span style=color:#080;font-style:italic>// implicitly specifying Keep.left
+</span><span style=color:#080;font-style:italic></span>  <span style=color:#666>.</span>toMat<span style=color:#666>(</span>sink<span style=color:#666>)(</span><span style=color:#00f>Keep</span><span style=color:#666>.</span>both<span style=color:#666>)</span>   <span style=color:#080;font-style:italic>// collecting both values
+</span><span style=color:#080;font-style:italic></span>  <span style=color:#666>.</span>run<span style=color:#666>()</span>
+
+system<span style=color:#666>.</span>scheduler<span style=color:#666>.</span>scheduleOnce<span style=color:#666>(</span><span style=color:#666>2.</span>seconds<span style=color:#666>)</span> <span style=color:#666>{</span> 
+  println<span style=color:#666>(</span><span style=color:#b44>&#34;Stopping the source&#34;</span><span style=color:#666>)</span>
+  control<span style=color:#666>.</span>stop<span style=color:#666>()</span> 
+<span style=color:#666>}</span>
+
+doneF<span style=color:#666>.</span>onComplete <span style=color:#666>{</span> result <span style=color:#a2f;font-weight:700>=&gt;</span>
+  result <span style=color:#a2f;font-weight:700>match</span> <span style=color:#666>{</span>
+    <span style=color:#a2f;font-weight:700>case</span> <span style=color:#00f>Success</span><span style=color:#666>(</span><span style=color:#a2f;font-weight:700>_</span><span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=&gt;</span> 
+      println<span style=color:#666>(</span><span style=color:#b44>&#34;The stream completed successfully&#34;</span><span style=color:#666>)</span>
+    <span style=color:#a2f;font-weight:700>case</span> <span style=color:#00f>Failure</span><span style=color:#666>(</span>ex<span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=&gt;</span> 
+      println<span style=color:#666>(</span><span style=color:#b44>s&#34;The stream failed with exception: </span><span style=color:#b68;font-weight:700>${</span>ex<span style=color:#b68;font-weight:700>}</span><span style=color:#b44>&#34;</span><span style=color:#666>)</span>
+  <span style=color:#666>}</span>
+  system<span style=color:#666>.</span>terminate<span style=color:#666>()</span>
+<span style=color:#666>}</span>
+</code></pre></div><p>The following diagram illustrates how the various combination functions are chained to obtain our final result.
+<p class=markdown-image>
+<img src=/images/post/akka-stream-materialized-values/combination.png alt="Materialized Values composition diagram">
+</p></p>
+<h2 id=how-can-we-return-our-own-values>How can we return our own values? <a href=#how-can-we-return-our-own-values class=anchor>🔗</a></h2><p>At this point, we feel comfortable working with <em>materialized values</em> and we are able to use the various combinator functions to guide the materialization into producing exactly the data we are interested in.</p>
+<p>However, there is still something that bothers us: what if we wanted to have a stage that produces a <em>materialized value</em> of our choosing? The last example featured a source returning a type we defined: <code>ControlInterface</code>. This cannot be something that a built-in stage can have generated.</p>
+<p>Indeed <em>Akka Streams</em> still has some tricks up its sleeve to work on <em>materialized values</em>. Up until this point we&rsquo;ve only really handled them via the composition functions we specify when combining 2 stages. As we have seen these functions take 2 values and return a new value as a result. In all the examples we&rsquo;ve seen so far this result was only a projection, however we could have opted to return an entirely different type. In the last example instead of returning a tuple of the <code>ControlInterface</code> and the <code>Future[Done]</code> we could have opted to create a case class <code>MyMaterializedValue</code> containing them.</p>
+<p>This intuition should make us wonder if something similar is possible also when operating on a single stage. That is indeed the case: we can use the method <code>mapMaterializeValue</code> to apply a transformation to the <em>materialized value</em> of a source, flow, or sink. This method takes as an argument a function that given the current value needs to produce a new value.</p>
+<p>Let&rsquo;s see how we can use this feature to implement the source from the last example:</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>class</span> <span style=color:#00f>ControlInterfaceImpl</span><span style=color:#666>(</span>killSwitch<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>KillSwitch</span><span style=color:#666>)</span> 
+  <span style=color:#a2f;font-weight:700>extends</span> <span style=color:#00f>ControlInterface</span> <span style=color:#666>{</span>
+    <span style=color:#a2f;font-weight:700>def</span> stop<span style=color:#666>()</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Unit</span> <span style=color:#666>=</span> killSwitch<span style=color:#666>.</span>shutdown<span style=color:#666>()</span>
+<span style=color:#666>}</span>
+
+<span style=color:#a2f;font-weight:700>val</span> source<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Source</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> 
+  <span style=color:#00f>Source</span><span style=color:#666>.</span>fromIterator<span style=color:#666>(()</span> <span style=color:#a2f;font-weight:700>=&gt;</span> <span style=color:#00f>Iterator</span><span style=color:#666>.</span>from<span style=color:#666>(</span><span style=color:#666>1</span><span style=color:#666>))</span>
+    <span style=color:#666>.</span>throttle<span style=color:#666>(</span><span style=color:#666>1</span><span style=color:#666>,</span> <span style=color:#666>500.</span>millis<span style=color:#666>)</span>
+    <span style=color:#666>.</span>viaMat<span style=color:#666>(</span><span style=color:#00f>KillSwitches</span><span style=color:#666>.</span>single<span style=color:#666>)(</span><span style=color:#00f>Keep</span><span style=color:#666>.</span>right<span style=color:#666>)</span>
+    <span style=color:#666>.</span>mapMaterializedValue<span style=color:#666>(</span>s <span style=color:#a2f;font-weight:700>=&gt;</span> <span style=color:#a2f;font-weight:700>new</span> <span style=color:#00f>ControlInterfaceImpl</span><span style=color:#666>(</span>s<span style=color:#666>))</span>
+</code></pre></div><p>The idea is to leverage a kill switch stage to interrupt the generation of new integers and wrap the materialized <code>KillSwitch</code> instance into an implementation of our <code>ControlInterface</code>.</p>
+<p>This strategy of handling <em>materialized values</em> is a good approach when we want to <em>repackage</em> the current value into something else. This helps in avoiding leaking too many details of how our stages are implemented leaving room to tweak the internal representation without breaking source compatibility.</p>
+<p>An important observation we can make on this scheme is that inside the <code>mapMaterializedValue</code> we are free to close over whatever value without any chance for <em>Akka Streams</em> to tell us if we are doing something potentially dangerous. As we already discussed in previous sections, stages once defined can be materialized multiple times. Thus we must be extra careful not to close over values that are not intended to be used multiple times (remember the example on promises).</p>
+<p>This strategy covers the majority of situations where we need to operate on <em>materialized values</em>, so we could stop here. However in the preface I stated that this article would be an in-depth coverage of the topic, so let&rsquo;s go on. In the remainder of this section, we will see how to create a custom stage that materializes a value of our choosing.</p>
+<p>So let&rsquo;s imagine that for some reason we find ourselves unable or unwilling to use kill switches as a mechanism to implement the <code>ControlInterface</code>. We need an alternative way to communicate with our source to signal we want it to stop producing new values.</p>
+<p>To achieve this we will use the <code>GraphStage</code> API: this is the lowest level API of <em>Akka Streams</em> used to build all of the base stages. Explaining this API alone could be the topic of a full article, so we are not going to dwell on the details of how it works. Instead, we will limit ourselves to discuss the parts which are functional to working with <em>materialized values</em>.</p>
+<p>Given that our main objective is to produce a <em>materialized value</em> we will use a variant of the API called <code>GraphStageWithMaterializedValue</code> which allows us to define a factory that creates both the logic and the value of our stage.</p>
+<p>The idea behind our implementation will be rather simple: we&rsquo;ll define a stage of shape <code>Source</code> which will produce integers starting from a specified number and provide a callback function which we will use to complete the stage when invoked.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>class</span> <span style=color:#00f>AsyncCallbackControlInterface</span><span style=color:#666>(</span>callback<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>AsyncCallback</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Unit</span><span style=color:#666>])</span> 
+  <span style=color:#a2f;font-weight:700>extends</span> <span style=color:#00f>ControlInterface</span> <span style=color:#666>{</span>
+    <span style=color:#a2f;font-weight:700>def</span> stop<span style=color:#666>()</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Unit</span> <span style=color:#666>=</span> <span style=color:#666>{</span>
+      callback<span style=color:#666>.</span>invoke<span style=color:#666>(</span> <span style=color:#666>()</span> <span style=color:#666>)</span>
+    <span style=color:#666>}</span>
+<span style=color:#666>}</span>
+
+<span style=color:#a2f;font-weight:700>class</span> <span style=color:#00f>StoppableIntSource</span><span style=color:#666>(</span>from<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>)</span> 
+  <span style=color:#a2f;font-weight:700>extends</span> <span style=color:#00f>GraphStageWithMaterializedValue</span><span style=color:#666>[</span>
+    <span style=color:#0b0;font-weight:700>SourceShape</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>]</span>, 
+    <span style=color:#0b0;font-weight:700>ControlInterface</span>
+  <span style=color:#666>]</span> <span style=color:#666>{</span>
+  <span style=color:#a2f;font-weight:700>val</span> out<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Outlet</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>Outlet</span><span style=color:#666>(</span><span style=color:#b44>&#34;out&#34;</span><span style=color:#666>)</span>
+  
+  <span style=color:#a2f;font-weight:700>def</span> shape<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>SourceShape</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#00f>SourceShape</span><span style=color:#666>(</span>out<span style=color:#666>)</span>
+  
+  <span style=color:#a2f;font-weight:700>class</span> <span style=color:#00f>StoppableIntSourceLogic</span><span style=color:#666>(</span><span style=color:#00f>_shape</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Shape</span><span style=color:#666>)</span> 
+    <span style=color:#a2f;font-weight:700>extends</span> <span style=color:#00f>GraphStageLogic</span><span style=color:#666>(</span>shape<span style=color:#666>)</span> <span style=color:#666>{</span>
+    <span style=color:#a2f;font-weight:700>private</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>StoppableIntSource</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>val</span> stopCallback<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>AsyncCallback</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Unit</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#666>{</span>
+      getAsyncCallback<span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Unit</span><span style=color:#666>](</span>
+        <span style=color:#666>(</span><span style=color:#a2f;font-weight:700>_</span><span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=&gt;</span>
+          completeStage<span style=color:#666>()</span>
+      <span style=color:#666>)</span>
+    <span style=color:#666>}</span>
+      
+    <span style=color:#a2f;font-weight:700>private</span> <span style=color:#a2f;font-weight:700>var</span> next<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Int</span> <span style=color:#666>=</span> from
+      
+    setHandler<span style=color:#666>(</span>out<span style=color:#666>,</span> <span style=color:#a2f;font-weight:700>new</span> <span style=color:#00f>OutHandler</span> <span style=color:#666>{</span>
+      <span style=color:#a2f;font-weight:700>def</span> onPull<span style=color:#666>()</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Unit</span> <span style=color:#666>=</span> <span style=color:#666>{</span>
+        push<span style=color:#666>(</span>out<span style=color:#666>,</span> next<span style=color:#666>)</span>
+        next <span style=color:#666>+=</span> <span style=color:#666>1</span>
+      <span style=color:#666>}</span>
+    <span style=color:#666>})</span>
+  <span style=color:#666>}</span>
+  
+  <span style=color:#a2f;font-weight:700>def</span> createLogicAndMaterializedValue<span style=color:#666>(</span>inheritedAttributes<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Attributes</span><span style=color:#666>)</span>
+  <span style=color:#a2f;font-weight:700>:</span> <span style=color:#666>(</span><span style=color:#0b0;font-weight:700>GraphStageLogic</span><span style=color:#666>,</span> <span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>)</span> <span style=color:#a2f;font-weight:700>=</span> <span style=color:#666>{</span>
+    <span style=color:#a2f;font-weight:700>val</span> logic <span style=color:#a2f;font-weight:700>=</span> <span style=color:#a2f;font-weight:700>new</span> <span style=color:#00f>StoppableIntSourceLogic</span><span style=color:#666>(</span>shape<span style=color:#666>)</span>
+    
+    <span style=color:#a2f;font-weight:700>val</span> controlInterface <span style=color:#a2f;font-weight:700>=</span> 
+      <span style=color:#a2f;font-weight:700>new</span> <span style=color:#00f>AsyncCallbackControlInterface</span><span style=color:#666>(</span>logic<span style=color:#666>.</span>stopCallback<span style=color:#666>)</span>
+
+    logic <span style=color:#666>-&gt;</span> controlInterface
+  <span style=color:#666>}</span>
+<span style=color:#666>}</span>
+</code></pre></div><p>Most of the code is rather simple if a little verbose. The only important bit is the one regarding the handling of the <code>stopCallback</code>. For starters, we can see that we defined a dedicated class for the stage logic instead of defining it anonymously as it is usually done when working with <code>GraphStage</code>. This is so that can have access to the callback from the outside of the class. Indeed looking at the <code>createLogicAndMaterializedValue</code> method we can see that first we create the logic and then we extract the callback and wrap it inside our <code>ControlInterface</code> implementation.</p>
+<p>The other thing to note is that inside the <code>AsyncCallbackControlInterface</code> we are not calling the callback directly but instead we are using the <code>invoke</code> method. This will schedule the execution of our callback code asynchronously by interleaving it with the data handling logic of our stage. This strategy guarantees us that while the callback code is executing, no other thread will have access to the <code>GraphStageLogic</code> instance, so we are safe to operate on its mutable state or perform management operations.</p>
+<p>We can now use our <code>StoppableIntSource</code> to implement the source:</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>val</span> source<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Source</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> 
+  <span style=color:#00f>Source</span><span style=color:#666>.</span>fromGraph<span style=color:#666>(</span><span style=color:#a2f;font-weight:700>new</span> <span style=color:#00f>StoppableIntSource</span><span style=color:#666>(</span><span style=color:#666>1</span><span style=color:#666>))</span>
+    <span style=color:#666>.</span>throttle<span style=color:#666>(</span><span style=color:#666>1</span><span style=color:#666>,</span> <span style=color:#666>500.</span>millis<span style=color:#666>)</span>
+</code></pre></div><p>At this point, we should have a good understanding of <em>materialized values</em> and how to handle them. We might think that the functionalities we have covered are enough to implement whatever program we might think of. However, <em>Akka Streams</em> still has an ace up its sleeve which comes to our help when we face particularly tricky situations.</p>
+<h2 id=lets-talk-pre-materialization>Let&rsquo;s talk pre-materialization <a href=#lets-talk-pre-materialization class=anchor>🔗</a></h2><p>Let&rsquo;s suppose we need to perform some streaming computations on integers similarly to how we&rsquo;ve done in the previous examples, however much more complex. Luckily we found a library that seems to do exactly what we need and exposes a simple API we can use!</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>trait</span> <span style=color:#00f>AmazingLibrary</span> <span style=color:#666>{</span>
+  <span style=color:#a2f;font-weight:700>def</span> complexComputation<span style=color:#666>(</span>source<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Source</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#a2f;font-weight:700>_</span><span style=color:#666>])</span><span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>]</span>
+<span style=color:#666>}</span>
+</code></pre></div><p>We can just plug our source in, grab the result, and be done early with our day. Right?</p>
+<p>Thinking about the beer that awaits us as soon as we finish this last task, we start piecing things together until we realize that the library is handling the materialization of the stream by itself.
+This means that we will not be able to obtain a reference to our <code>ControlInterface</code>, which means that the stream will never terminate which in turn will result in the future returned by the library to never complete. We can see our pint of beer vanishing before our eyes.</p>
+<p>However, <em>Akka Streams</em> comes to our rescue with another trick: pre-materialization.</p>
+<p>The problem we are facing is that we&rsquo;ve lost control of the materialization of the stream, however if we were able to materialize just our source and grab its <em>materialized value</em> we would be fine. Prematerialization allows us to do just that.</p>
+<p>When a stage is pre-materialized Akka instantiates it and gives us its <em>materialized value</em> while at the same time creating a linked stage which we can then pass around. This linked stage can then be materialized as many times as we want just like normal stages, however it remains linked to the original stage we have pre-materialized. This means that, if for any reason, the pre-materialized stage completes, all future materialization of the linked stage will result in a stream that immediately completes.</p>
+<p>Let&rsquo;s see how we can use the pre-materialization feature to plug our source into this amazing library.</p>
+<div class=highlight><pre tabindex=0 style=background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-scala data-lang=scala><span style=color:#a2f;font-weight:700>val</span> source<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Source</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> 
+  <span style=color:#00f>Source</span><span style=color:#666>.</span>fromGraph<span style=color:#666>(</span><span style=color:#a2f;font-weight:700>new</span> <span style=color:#00f>StoppableIntSource</span><span style=color:#666>(</span><span style=color:#666>1</span><span style=color:#666>))</span>
+    <span style=color:#666>.</span>throttle<span style=color:#666>(</span><span style=color:#666>1</span><span style=color:#666>,</span> <span style=color:#666>500.</span>millis<span style=color:#666>)</span>
+
+<span style=color:#a2f;font-weight:700>val</span> <span style=color:#666>(</span>control<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>ControlInterface</span><span style=color:#666>,</span> linkedSource<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Source</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span>, <span style=color:#0b0;font-weight:700>NotUsed</span><span style=color:#666>])</span> <span style=color:#a2f;font-weight:700>=</span> 
+  source<span style=color:#666>.</span>preMaterialize<span style=color:#666>()</span>
+
+<span style=color:#a2f;font-weight:700>val</span> amazingLibrary<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>AmazingLibrary</span> <span style=color:#666>=</span> <span style=color:#666>???</span>
+<span style=color:#a2f;font-weight:700>val</span> resutlF<span style=color:#a2f;font-weight:700>:</span> <span style=color:#0b0;font-weight:700>Future</span><span style=color:#666>[</span><span style=color:#0b0;font-weight:700>Int</span><span style=color:#666>]</span> <span style=color:#a2f;font-weight:700>=</span> 
+  amazingLibrary<span style=color:#666>.</span>complexComputation<span style=color:#666>(</span>linkedSource<span style=color:#666>)</span>
+</code></pre></div><p><em>Akka Streams</em> provides a <code>preMaterialize</code> operator for both <code>Source</code> and <code>Sink</code> however, at least as of version 2.6.17, it doesn&rsquo;t feature one for <code>Flow</code>. It is indeed much rarer to be in a situation where this functionality is needed for flows, however it does happen. There is an Akka <a href=https://github.com/akka/akka/issues/30074 target=_blank rel=noopener>issue</a> proposing its addition with a snippet implementation that you can use in your project right now while waiting for Akka to include the functionality natively.</p>
+<h2 id=conclusion>Conclusion <a href=#conclusion class=anchor>🔗</a></h2><p>In this article, we&rsquo;ve introduced <em>materialized values</em>, explain the reason why they exist, and seen various examples showing how to use them. The aim was to provide an holistic coverage of the topic in order to give the reader a better <em>feel</em> for the subject.</p>
+<p>There&rsquo;s no substitute for playing with the library and trying to understand how the various concepts interact with each other to build a deep understanding, but hopefully this piece can serve as a guideline to better focus your exploration.</p>
+<h2 id=resources>Resources <a href=#resources class=anchor>🔗</a></h2><ul>
+<li><a href=https://doc.akka.io/docs/akka/current/stream/stream-flows-and-basics.html target=_blank rel=noopener>Akka Streams documentation: basics and working with flows</a></li>
+<li><a href=https://doc.akka.io/docs/akka/current/stream/stream-composition.html#materialized-values target=_blank rel=noopener>Akka Streams documentation: materialized values</a></li>
+<li><a href=https://doc.akka.io/docs/akka/current/stream/stream-graphs.html target=_blank rel=noopener>Akka Streams documentation: working with graphs</a></li>
+</ul>
+</div>
+<div class=tags>
+<a href=https://nivox.github.io/tags/akka>akka</a>
+<a href=https://nivox.github.io/tags/akka-streams>akka-streams</a>
+</div>
+<div id=comment>
+<div id=disqus_thread></div>
+<script type=application/javascript>var disqus_config=function(){};(function(){if(["localhost","127.0.0.1"].indexOf(window.location.hostname)!=-1){document.getElementById('disqus_thread').innerHTML='Disqus comments not available by default when the website is previewed locally.';return}var b=document,a=b.createElement('script');a.async=!0,a.src='//nivox-github-io.disqus.com/embed.js',a.setAttribute('data-timestamp',+new Date),(b.head||b.body).appendChild(a)})()</script>
+<noscript>Please enable JavaScript to view the <a href=https://disqus.com/?ref_noscript>comments powered by Disqus.</a></noscript>
+<a href=https://disqus.com class=dsq-brlink>comments powered by <span class=logo-disqus>Disqus</span></a>
+</div>
+</section>
+</main>
+<footer id=footer>
+<div id=social>
+<a class=symbol href=https://github.com/nivox rel=me target=_blank><svg fill="#bbb" width="28" height="28" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><title>Github</title><desc>Created with Sketch.</desc><defs/><g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd"><g id="Social-Icons---Rounded-Black" transform="translate(-264.000000, -939.000000)"><g id="Github" transform="translate(264.000000, 939.000000)"><path d="M8 72H64c4.418278.0 8-3.581722 8-8V8c0-4.418278-3.581722-8-8-8H8c-4.418278 811624501e-24-8 3.581722-8 8V64c541083001e-24 4.418278 3.581722 8 8 8z" id="Rounded" fill="#bbb"/><path d="M35.9985 13C22.746 13 12 23.7870921 12 37.096644c0 10.6440272 6.876 19.6751861 16.4145 22.8617681C29.6145 60.1797862 30.0525 59.4358488 30.0525 58.7973276 30.0525 58.2250681 30.0315 56.7100863 30.0195 54.6996482c-6.6765 1.4562499-8.085-3.2302544-8.085-3.2302544-1.0905-2.7829884-2.664-3.5239139-2.664-3.5239139C17.091 46.4500754 19.4355 46.4801943 19.4355 46.4801943c2.4075.1701719 3.675 2.4833051 3.675 2.4833051 2.142 3.6820383 5.6175 2.6188404 6.9855 2.0014024C30.3135 49.4077535 30.9345 48.3460615 31.62 47.7436831 26.2905 47.1352808 20.688 45.0691228 20.688 35.8361671c0-2.6308879.9345-4.781379 2.4705-6.4665327C22.911 28.7597262 22.0875 26.3110578 23.3925 22.9934585c0 0 2.016-.6475568 6.6 2.4697516C31.908 24.9285993 33.96 24.6620468 36.0015 24.6515052 38.04 24.6620468 40.0935 24.9285993 42.0105 25.4632101c4.581-3.1173084 6.5925-2.4697516 6.5925-2.4697516C49.9125 26.3110578 49.089 28.7597262 48.8415 29.3696344 50.3805 31.0547881 51.309 33.2052792 51.309 35.8361671c0 9.2555448-5.6115 11.29309-10.9575 11.8894446.860999999999997.7439374 1.629 2.2137408 1.629 4.4621184C41.9805 55.4089489 41.9505 58.0067059 41.9505 58.7973276 41.9505 59.4418726 42.3825 60.1918338 43.6005 59.9554002 53.13 56.7627944 60 47.7376593 60 37.096644 60 23.7870921 49.254 13 35.9985 13" fill="#fff"/></g></g></g></svg>
+</a>
+<a class=symbol href=https://stackoverflow.com/users/440875/nivox rel=me target=_blank><svg fill="#bbb" width="28" height="28" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><title>stackoverflow</title><desc>Created with Sketch.</desc><defs/><g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd"><g id="Social-Icons---Rounded-Black" transform="translate(-488.000000, -1163.000000)"><g id="stackoverflow" transform="translate(488.000000, 1163.000000)"><path d="M8 72H64c4.418278.0 8-3.581722 8-8V8c0-4.418278-3.581722-8-8-8H8c-4.418278 811624501e-24-8 3.581722-8 8V64c541083001e-24 4.418278 3.581722 8 8 8z" id="Rounded" fill="#bbb"/><path d="M42.0860128 53.5922927 22.9745951 53.6011499 22.9729497 49.5538824 42.0835447 49.5440929 42.0860128 53.5922927zM55 30.6708298 51.7306912 12 47.7087256 12.6920259l3.2688387 18.6708298L55 30.6708298zM42.5455518 44.3547147 23.5156994 42.616026 23.1410164 46.6470941l19.030205 1.7370572L42.5455518 44.3547147zm1.2554466-5.2815628-18.4550173-4.919234L24.285633 38.0621508l18.4563101 4.9198168 1.0590553-3.9088157zm2.4093479-4.6295108-16.4608999-9.6271776-2.0746249 3.4850693 16.4617226 9.6277603 2.0738022-3.485652zm4.0363041-2.8347655-3.3721468 2.2794433L36.106599 18.2318456l3.3726169-2.2801425L50.2466504 31.6088756zm-4.9150697 8.6695527h3.2483886V60H17V40.2784283h3.2648427V56.8243495h25.066738V40.2784283z" fill="#fff"/></g></g></g></svg>
+</a>
+<a class=symbol href=https://twitter.com/nivox rel=me target=_blank><svg fill="#bbb" width="28" height="28" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="438.536" height="438.536" viewBox="0 0 438.536 438.536" style="enable-background:new 0 0 438.536 438.536"><g><path d="M414.41 24.123C398.333 8.042 378.963.0 356.315.0H82.228C59.58.0 40.21 8.042 24.126 24.123 8.045 40.207.003 59.576.003 82.225v274.084c0 22.647 8.042 42.018 24.123 58.102 16.084 16.084 35.454 24.126 58.102 24.126h274.084c22.648.0 42.018-8.042 58.095-24.126 16.084-16.084 24.126-35.454 24.126-58.102V82.225C438.532 59.576 430.49 40.204 414.41 24.123zM335.471 168.735c.191 1.713.288 4.278.288 7.71.0 15.989-2.334 32.025-6.995 48.104-4.661 16.087-11.8 31.504-21.416 46.254-9.606 14.749-21.074 27.791-34.396 39.115-13.325 11.32-29.311 20.365-47.968 27.117-18.648 6.762-38.637 10.143-59.953 10.143-33.116.0-63.76-8.952-91.931-26.836 4.568.568 9.329.855 14.275.855 27.6.0 52.439-8.565 74.519-25.7-12.941-.185-24.506-4.179-34.688-11.991-10.185-7.803-17.273-17.699-21.271-29.691 4.947.76 8.658 1.137 11.132 1.137 4.187.0 9.042-.76 14.56-2.279-13.894-2.669-25.598-9.562-35.115-20.697-9.519-11.136-14.277-23.84-14.277-38.114v-.571c10.085 4.755 19.602 7.229 28.549 7.422-17.321-11.613-25.981-28.265-25.981-49.963.0-10.66 2.758-20.747 8.278-30.264 15.035 18.464 33.311 33.213 54.816 44.252 21.507 11.038 44.54 17.227 69.092 18.558-.95-3.616-1.427-8.186-1.427-13.704.0-16.562 5.853-30.692 17.56-42.399 11.703-11.706 25.837-17.561 42.394-17.561 17.515.0 32.079 6.283 43.688 18.846 13.134-2.474 25.892-7.33 38.26-14.56-4.757 14.652-13.613 25.788-26.55 33.402 12.368-1.716 23.88-4.95 34.537-9.708C357.458 149.793 347.462 160.166 335.471 168.735z"/></g></svg>
+</a>
+</div>
+<div class=copyright>
+© Copyright 2021 - Andrea Zito
+</div>
+</footer>
+</body>
+</html>
