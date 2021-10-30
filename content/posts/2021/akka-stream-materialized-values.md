@@ -1,10 +1,11 @@
 ---
 title: "Demystifying Akka Streams' Materialized Values"
-description: "A tour of Akka Streams' materialized values explaining what they are, why are they needed, and how are they used."
+description: "Let's explore Akka Streams materialized values and try to understard what they are, why they are needed, and how to use them."
+summary: "Let's explore Akka Streams materialized values and try to understard what they are, why they are needed, and how to use them."
 slug: akka-streams-materialized-values
 keywords: ["akka", "akka-streams", "materialization", "materialized value"]
 tags: ["akka", "akka-streams"]
-date: 2021-10-26T19:07:21Z
+date: 2021-10-30T22:00:00Z
 draft: true
 ---
 
