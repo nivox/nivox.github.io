@@ -62,6 +62,8 @@ val stream: RunnableGraph[NotUsed] = Source.repeat("Hello world")
                 case Failure(ex) => promise.fail(ex)
             }
         }
+
+val streamDone: Future[Done] = promise.future
 ```
 
 Everything seems to work as expected! We achieved the same outcome without relying on the value generated as a result of running the stream.
@@ -73,7 +75,7 @@ Well in this case we would have a failure trying to complete the promise: once a
 This experiment allows us to conclude that *materialized values* are necessary to enable stream stages to be reused multiple times. By having stages create their communication channel only when the stream is run Akka Streams ensures that different stream instantiations are independent.
 
 ## How do they compose? 
-Now that we understand why *materialized values* are needed let's try and shed some light on how they work. 
+Now that we understand **why** *materialized values* are needed let's try and shed some light on how they work. 
 
 First of all, it is important to note that *materialized values* are not some special properties of sinks and sources. Indeed every stage in Akka Streams **needs** to produce a value during the materialization phase (i.e. when the stream is executed). In case a stage doesn't have anything meaningful to produce it is the convention to use the singleton type `NotUsed`.
 
@@ -137,7 +139,7 @@ At this point, we feel comfortable working with *materialized values* and we are
 
 However, there is still something that bothers us: what if we wanted to have a stage that produces a *materialized value* of our choosing? The last example featured a source returning a type we defined: `ControlInterface`. This cannot be something that a built-in stage can have generated.
 
-Indeed Akka Streams still has some tricks up its sleeve to work on *materialized values*. Up until this point we've only really handled them via the composition functions we specify when combining 2 stages. As we have seen these functions take 2 values and return a new value as a result. In all the examples we've seen this result was only a projection, however we could have opted to return an entirely different type. In the last example instead of returning a tuple of the `ControlInterface` and the `Future[Done]` we could have opted to create a case class `MyMaterializedValue` containing them.
+Indeed Akka Streams still has some tricks up its sleeve to work on *materialized values*. Up until this point we've only really handled them via the composition functions we specify when combining 2 stages. As we have seen these functions take 2 values and return a new value as a result. In all the examples we've seen so far this result was only a projection, however we could have opted to return an entirely different type. In the last example instead of returning a tuple of the `ControlInterface` and the `Future[Done]` we could have opted to create a case class `MyMaterializedValue` containing them.
 
 This intuition should make us wonder if something similar is possible also when operating on a single stage. That is indeed the case: we can use the method `mapMaterializeValue` to apply a transformation to the *materialized value* of a source, flow, or sink. This method takes as an argument a function that given the current value needs to produce a new value.
 
@@ -166,7 +168,7 @@ This strategy covers the majority of situations where we need to operate on *mat
 
 So let's imagine that for some reason we find ourselves unable or unwilling to use kill switches as a mechanism to implement the `ControlInterface`. We need an alternative way to communicate with our source to signal we want it to stop producing new values.
 
-To achieve this we will use the `GraphStage` API: this is the lowest level building block of Akka Streams on top of which all other components are constructed. Explaining this API alone could be the topic of a full article, so we are not going to dwell on the details of how it works. Instead, we will limit ourselves to discussing the parts which are functional to working with *materialized values*.
+To achieve this we will use the `GraphStage` API: this is the lowest level API of Akka Streams used to build all of the base stages. Explaining this API alone could be the topic of a full article, so we are not going to dwell on the details of how it works. Instead, we will limit ourselves to discuss the parts which are functional to working with *materialized values*.
 
 Given that our main objective is to produce a *materialized value* we will use a variant of the API called `GraphStageWithMaterializedValue` which allows us to define a factory that creates both the logic and the value of our stage.
 
@@ -222,7 +224,7 @@ class StoppableIntSource(from: Int)
 
 Most of the code is rather simple if a little verbose. The only important bit is the one regarding the handling of the `stopCallback`. For starters, we can see that we defined a dedicated class for the stage logic instead of defining it anonymously as it is usually done when working with `GraphStage`. This is so that can have access to the callback from the outside of the class. Indeed looking at the `createLogicAndMaterializedValue` method we can see that first we create the logic and then we extract the callback and wrap it inside our `ControlInterface` implementation. 
 
-The other thing to note is that inside the `AsyncCallbackControlInterface` we are not calling the callback directly but instead we are using the `invoke` method. This will schedule the execution of our callback code asynchronously by interleaving it with the data handlers. This strategy guarantees us that once the code is run no other thread has access to the `GraphStageLogic` instance so we are safe to operate on its mutable state or perform management operations on it.
+The other thing to note is that inside the `AsyncCallbackControlInterface` we are not calling the callback directly but instead we are using the `invoke` method. This will schedule the execution of our callback code asynchronously by interleaving it with the data handling logic of our stage. This strategy guarantees us that while the callback code is executing, no other thread will have access to the `GraphStageLogic` instance, so we are safe to operate on its mutable state or perform management operations.
 
 We can now use our `StoppableIntSource` to implement the source:
 
