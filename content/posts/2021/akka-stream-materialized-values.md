@@ -5,7 +5,7 @@ summary: "Let's explore Akka Streams materialized values and try to understard w
 slug: akka-streams-materialized-values
 keywords: ["akka", "akka-streams", "materialization", "materialized value"]
 tags: ["akka", "akka-streams"]
-date: 2021-10-30T22:00:00Z
+date: 2021-10-30T20:00:00Z
 draft: false
 ---
 
