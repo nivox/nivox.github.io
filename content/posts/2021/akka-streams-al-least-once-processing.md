@@ -34,6 +34,21 @@ When it comes to our hard earned money the only semantic we are happy with is **
 
 The idea is that if we are able to recognise that we already have performed a certain operation for an incoming message we can safely ignore it. On the other end if our operation is idempotent we can skip the check and just perform it as many times as we receive the same message, knowning that the end result will be the same.
 
-In the rest of this article we will concentrate on how to achieve **at-least-once** semantic in an Akka Stream application by using Kafka as our durable storage.
+In the rest of this article we will concentrate on how to achieve **at-least-once** semantic in an Akka Stream application.
 
-# 
+# Setting up the backbone
+
+The first task we need to complete is to select a durable storage which satify the requirements we've outlined in the introduction:
+- provides sequential access to messages
+- associate each message with an ofset which uniquely identify each message
+
+A particularly well suited choice is [Apache Kafka](https://kafka.apache.org). The project has grown into a complete platform for building streaming applications featuring a message broker, a library for building streaming computations and a suite of connectors to integrate with third party solutions.
+We will only concern ourself with the message broker itself as we will leaverage Akka Streams for the computation side.
+
+At its core Kafka let us define *topics* into which we can *publish* events characterized by a *key* and a *payload*. Each topic is divided into multiple partition to which each message is assigned based on its key. Messages inside a specific topic-partition are stored sequentially and are assigned an monotonic offset. In order to read messages we need to tell Kafka where to start reading from: we do this by specifying a set of triples *topic-partition-offset*.
+
+To simplify our lives Kafka exposes an abstraction called *consumer-groups* which let us associate a set of topic to a name. We can then spin-up multiple instances of our application using the same *consumer-group* name and Kafka will take care of distributing the various partitions between our instances. Another powerful feature is that Kafka keeps track of the *committed* offsets for each *consumer groups*. This means that if we stop our application and restart it, specifying the same *consumer group*, Kafka will resume reading messages from where we left off. Nifty!
+
+The last consideration that makes Kafka a good choice for our Akka Streams application is that it is well supported via the [Alpakka Kafka](https://doc.akka.io/docs/alpakka-kafka/current/home.html) project.
+
+# The use case
